@@ -3,6 +3,18 @@
 Follows [Semantic Versioning](https://semver.org). Versions below 1.0.0 signal
 that the command-line interface may still change.
 
+## 0.2.1 - 2026-09-27
+
+### Changed
+- Moved into the `maggieMCKO/claude-skills` collection (the repository formerly named
+  `provenance-log`, which GitHub now redirects). The plugin lives in
+  `plugins/provenance-log/`, and the marketplace is now named `claude-skills`.
+- New install command:
+  `claude plugin marketplace add maggieMCKO/claude-skills && claude plugin install provenance-log@claude-skills`.
+  Anyone who installed 0.2.0 as `provenance-log@provenance-log` should uninstall it and
+  reinstall from the new marketplace.
+- No change to the skill, script or hook behaviour.
+
 ## 0.2.0 - 2026-09-27
 
 Packaged as a Claude Code plugin, so the skill and its hook install in one command.

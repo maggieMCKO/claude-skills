@@ -14,10 +14,10 @@ authors:
     given-names: Meng-Ching
     orcid: "https://orcid.org/0000-0002-2234-9380"
     # affiliation: ""
-version: 0.2.0
+version: 0.2.1
 date-released: "2026-09-27"
 license: MIT
-repository-code: "https://github.com/maggiemcko/provenance-log"
+repository-code: "https://github.com/maggieMCKO/claude-skills/tree/main/plugins/provenance-log"
 keywords:
   - reproducibility
   - provenance
