@@ -1,0 +1,6 @@
+provenance/
+*.bak-*
+__pycache__/
+*.pyc
+*.tar.gz
+.DS_Store

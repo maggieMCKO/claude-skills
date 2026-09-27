@@ -1,0 +1,20 @@
+{
+  "_comment": "PostToolUse hook: append every Bash command the agent runs to the active provenance manifest. Merge the `hooks` block into ~/.claude/settings.json (all projects) or <repo>/.claude/settings.json (one repo). Prefer install_hook.py, which merges safely and is idempotent.",
+  "_authoritative_schema": "https://code.claude.com/docs/en/hooks-guide -- if that page disagrees with the block below, trust the page. Some versions also offer an interactive /hooks command, which writes this for you.",
+  "_project_variant": "For a project-local install replace $HOME/.claude with ${CLAUDE_PROJECT_DIR:-$PWD}/.claude so the hook uses the project's own copy of the skill.",
+  "_limits": "Captures the command string only: not its exit code, its inputs or its outputs. It is a floor, not a substitute for explicit `step` calls -- a hook cannot know which file was an input and which a deliverable, nor that a substitution was a deviation. It skips its own calls and bare navigation commands; set PROVENANCE_LOG_ALL=1 to record everything.",
+  "_privacy": "Command strings may contain credentials. provenance.py redacts named secret assignments and known token shapes on a best-effort basis only -- review a manifest before committing it.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/skills/provenance-log/scripts/provenance.py\" hook"
+          }
+        ]
+      }
+    ]
+  }
+}

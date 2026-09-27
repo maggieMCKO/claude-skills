@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "provenance-log: mechanical provenance capture for computational analyses"
+abstract: >-
+  An Agent Skill and standalone CLI that records what a computational analysis
+  actually did - every step with its command, every software version, every
+  script, and a checksum for every input and output - while the work happens
+  rather than afterwards. Includes a three-axis reproducibility checklist
+  (REFORMS validity, claim provenance, FAIR stewardship) for auditing finished
+  analyses.
+type: software
+authors:
+  - family-names: Ko
+    given-names: Meng-Ching
+    orcid: "https://orcid.org/0000-0002-2234-9380"
+    # affiliation: ""
+version: 0.1.0
+date-released: "2026-09-26"
+license: MIT
+repository-code: "https://github.com/maggiemcko/provenance-log"
+keywords:
+  - reproducibility
+  - provenance
+  - research-software
+  - FAIR
+  - agent-skill
+# Uncomment after the first Zenodo release mints a DOI:
+# identifiers:
+#   - description: "Archived snapshot of all versions"
+#     type: doi
+#     value: 10.5281/zenodo.XXXXXXX
+references:
+  - type: article
+    title: "REFORMS: Consensus-based Recommendations for Machine-learning-based Science"
+    authors:
+      - family-names: Kapoor
+        given-names: Sayash
+    doi: 10.1126/sciadv.adk3452
+    year: 2024
+  - type: article
+    title: "The FAIR Guiding Principles for scientific data management and stewardship"
+    authors:
+      - family-names: Wilkinson
+        given-names: "Mark D."
+    doi: 10.1038/sdata.2016.18
+    year: 2016
