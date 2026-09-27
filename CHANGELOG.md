@@ -3,6 +3,28 @@
 Follows [Semantic Versioning](https://semver.org). Versions below 1.0.0 signal
 that the command-line interface may still change.
 
+## 0.2.0 - 2026-09-27
+
+Packaged as a Claude Code plugin, so the skill and its hook install in one command.
+
+### Added
+- `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`: the repository is
+  now its own plugin marketplace. Install with
+  `claude plugin marketplace add maggieMCKO/provenance-log && claude plugin install provenance-log@provenance-log`.
+- `hooks/hooks.json`: the `PostToolUse` Bash hook ships with the plugin, referencing the
+  script through `${CLAUDE_PLUGIN_ROOT}`; no settings file to edit.
+- `PROVENANCE_HOOK=0` (also `off`/`false`/`no`) disables automatic capture while keeping
+  the skill, since a plugin hook is on by default.
+- Regression test for the opt-out (15 tests, 44 assertions).
+
+### Changed
+- `install_hook.py` is now only needed for copied (non-plugin) installs. Users upgrading
+  from 0.1.x to the plugin should run `install_hook.py --remove --apply` first.
+
+### Unchanged
+- Repository layout: the root is still the skill folder, so copying it into
+  `~/.claude/skills/` or `~/.codex/skills/` works as before.
+
 ## 0.1.0 - 2026-09-26
 
 First release.

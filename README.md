@@ -22,12 +22,33 @@ the thing most worth checking. `reference/CHECKLIST.md` addresses this directly.
 
 ## Install
 
-Requires Python 3.8+. No dependencies.
+Requires Python 3.8+ (`python3` on your PATH). No other dependencies.
+
+### Claude Code (recommended): as a plugin
+
+From a shell:
 
 ```bash
-git clone https://github.com/maggiemcko/provenance-log.git
-mkdir -p ~/.claude/skills
-cp -R provenance-log ~/.claude/skills/
+claude plugin marketplace add maggieMCKO/provenance-log && claude plugin install provenance-log@provenance-log
+```
+
+or inside Claude Code:
+
+```
+/plugin marketplace add maggieMCKO/provenance-log
+/plugin install provenance-log@provenance-log
+```
+
+This installs the skill **and** the automatic-capture hook in one step, with no settings file
+to edit. Restart Claude Code (or run `/reload-plugins`) afterwards. Update with
+`claude plugin update provenance-log@provenance-log`; remove with
+`claude plugin uninstall provenance-log@provenance-log`.
+
+### Other agents, or a pinned copy: copy the folder
+
+```bash
+git clone https://github.com/maggieMCKO/provenance-log.git
+cp -R provenance-log ~/.claude/skills/     # or ~/.codex/skills/ for Codex CLI
 ```
 
 | Agent | Personal (all projects) | Project-local |
@@ -36,13 +57,14 @@ cp -R provenance-log ~/.claude/skills/
 | Codex CLI | `~/.codex/skills/` | — |
 
 `SKILL.md` follows the open Agent Skills format, so the same folder works in any agent that
-reads it.
+reads it. Recent Claude Code versions also load a folder under `~/.claude/skills/` that carries
+a `.claude-plugin/` manifest as a plugin, hook included.
 
-**Personal or project?** Personal is the right default: it is a general tool you want in every
-analysis project, and it costs nothing when idle because the hook stays silent unless a
-manifest exists. Add a project-local copy when a specific repo should pin its own version —
-for a paper's repository, so the tooling travels with the code and reviewers get the same
-behaviour you had.
+**Personal or project?** Personal (the plugin, or `~/.claude/skills/`) is the right default: it
+is a general tool you want in every analysis project, and it costs nothing when idle because
+the hook stays silent unless a manifest exists. Add a project-local copy when a specific repo
+should pin its own version — for a paper's repository, so the tooling travels with the code
+and reviewers get the same behaviour you had.
 
 ## Use
 
@@ -68,11 +90,18 @@ manuscript: it catches a result reported from a file that was later overwritten.
 Use `--deviation` whenever you depart from the intended method. Deviations get their own
 section in the report, which is exactly what a reader needs and what is otherwise forgotten.
 
-## Automatic capture (optional)
+## Automatic capture
 
 Claude Code supports [hooks](https://code.claude.com/docs/en/hooks-guide). A `PostToolUse`
 hook on `Bash` appends every command the agent runs to the manifest with no cooperation from
 the agent — capture that does not depend on the agent choosing to log.
+
+**Plugin installs get this automatically** (`hooks/hooks.json`). It stays silent in any
+directory without a `provenance/manifest.json`, so it has no effect on projects you have not
+initialised, and it adds nothing to the model's context. To keep the skill but switch
+automatic capture off, set `PROVENANCE_HOOK=0` in your environment.
+
+For a copied (non-plugin) install, `install_hook.py` merges the same hook into a settings file:
 
 ```bash
 python3 ~/.claude/skills/provenance-log/install_hook.py            # dry run
@@ -81,17 +110,15 @@ python3 ~/.claude/skills/provenance-log/install_hook.py --remove --apply   # und
 ```
 
 Restart the agent afterwards. `--project` writes `./.claude/settings.json` instead of the
-global config and points the hook at the project's own copy of the skill.
+global config and points the hook at the project's own copy of the skill. The installer backs
+up the existing settings file with a timestamp, preserves every other setting and every other
+hook, appends rather than replaces if you already have a `PostToolUse` Bash hook, is
+idempotent, and refuses to modify a file that is not valid JSON.
 
-The installer backs up the existing settings file with a timestamp, preserves every other
-setting and every other hook, appends rather than replaces if you already have a `PostToolUse`
-Bash hook, is idempotent, and refuses to modify a file that is not valid JSON.
-
-If the hook is installed **both** globally and per project, the agent runs both: they
-are different command strings, so a per-file duplicate check cannot see the overlap.
-`provenance.py` drops a step whose command is identical to the previous one within
-2 seconds (`PROVENANCE_DEDUPE_SECONDS` to change), and `install_hook.py --project`
-warns when a global install is already present. You only need one.
+**Upgrading from 0.1.x to the plugin?** Remove the settings-file hook first
+(`install_hook.py --remove --apply`), otherwise both fire. Nothing is double-counted either
+way — `provenance.py` drops a step whose command is identical to the previous one within
+2 seconds (`PROVENANCE_DEDUPE_SECONDS` to change) — but you only need one.
 
 The hook is a floor, not a replacement for explicit `step` calls. It sees the command string
 but cannot know which file was an input and which a deliverable, nor that a substitution was a
@@ -178,7 +205,7 @@ A count above zero means the hook is live.
 python3 tests/test_provenance.py -v
 ```
 
-14 tests, stdlib only. Each corresponds to a defect that was observed rather than imagined:
+15 tests, stdlib only. Each corresponds to a defect that was observed rather than imagined:
 capped-hash false positives, lost steps under concurrent hook writes, usage lines recorded as
 versions, hooks failing when the agent has changed directory, and secret leakage.
 
@@ -198,7 +225,7 @@ sampling frame nobody recorded is gone.
 ## Citing
 
 `CITATION.cff` carries machine-readable metadata; GitHub renders a "Cite this
-repository" button from it. Current version: **0.1.0**.
+repository" button from it. Current version: **0.2.0**.
 
 For a citable, versioned archive, enable the Zenodo–GitHub integration and cut a
 release: Zenodo mints a DOI per release plus a concept DOI that always resolves to
@@ -217,7 +244,7 @@ versions, hooks failing after a directory change, credential leakage into the
 manifest, a project-scoped install pointing at the personal copy, and duplicate
 steps when the hook is installed both globally and per project. Each was reproduced
 by a failing test before being fixed, and each has a regression test in
-`tests/test_provenance.py` (14 tests, 41 assertions, covering both
+`tests/test_provenance.py` (15 tests, 44 assertions, covering both
 `scripts/provenance.py` and `install_hook.py`).
 
 Two of those were found by review rather than by me, and one — the timezone skew

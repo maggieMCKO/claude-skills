@@ -383,6 +383,10 @@ def cmd_hook(a):
     writes to stderr disturbs the agent it is supposed to be observing
     invisibly, so every failure here is swallowed on purpose.
     """
+    # Installed as a plugin, the hook is on for every session. Let a user keep
+    # the skill but turn automatic capture off without uninstalling anything.
+    if os.environ.get("PROVENANCE_HOOK", "").strip().lower() in ("0", "off", "false", "no"):
+        sys.exit(0)
     try:
         payload = json.load(sys.stdin)
         cmd = (payload.get("tool_input") or {}).get("command")

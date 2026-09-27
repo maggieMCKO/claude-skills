@@ -1,0 +1,16 @@
+{
+  "name": "provenance-log",
+  "description": "Meng-Ching Ko's research-reproducibility plugins for Claude Code.",
+  "owner": {
+    "name": "Meng-Ching Ko",
+    "email": "mengchingko@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "provenance-log",
+      "source": "./",
+      "description": "Reproducible provenance capture for computational analyses: steps, versions, checksums, plus a reproducibility checklist.",
+      "version": "0.2.0"
+    }
+  ]
+}

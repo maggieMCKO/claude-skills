@@ -180,6 +180,22 @@ def test_hook_silent_without_manifest():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_hook_opt_out():
+    d = tempfile.mkdtemp()
+    try:
+        run(["init", "--title", "t"], d)
+        payload = json.dumps({"tool_input": {"command": "samtools sort x.bam"}, "cwd": d})
+        env = dict(os.environ, PROVENANCE_HOOK="0")
+        r = subprocess.run([sys.executable, CLI, "hook"], cwd=d, input=payload,
+                           capture_output=True, text=True, env=env)
+        check("opt-out exits 0", r.returncode == 0)
+        check("opt-out records nothing", len(manifest(d)["steps"]) == 0)
+        run(["hook"], d, stdin=payload)
+        check("default still records", len(manifest(d)["steps"]) == 1)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_secret_redaction():
     d = tempfile.mkdtemp()
     try:

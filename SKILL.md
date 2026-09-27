@@ -101,5 +101,6 @@ reviewer that read the reasoning tends to accept its premises.
 
 ## Installing
 
-See `README.md` for install paths, the optional automatic-capture hook, privacy notes and
+See the repository `README.md` for plugin and manual install, the automatic-capture hook
+(on by default in the plugin; `PROVENANCE_HOOK=0` turns it off), privacy notes and
 troubleshooting.

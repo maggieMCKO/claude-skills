@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "provenance-log",
+  "version": "0.2.0",
+  "description": "Records reproducible provenance for computational analyses: every step, software version, script and input/output checksum, captured while the work happens. Includes an automatic Bash-command hook and a three-axis reproducibility checklist.",
+  "author": {
+    "name": "Meng-Ching Ko",
+    "email": "mengchingko@gmail.com"
+  },
+  "homepage": "https://github.com/maggieMCKO/provenance-log",
+  "repository": "https://github.com/maggieMCKO/provenance-log",
+  "license": "MIT",
+  "keywords": ["reproducibility", "provenance", "research-software", "FAIR", "bioinformatics"],
+  "skills": [
+    "./"
+  ]
+}
