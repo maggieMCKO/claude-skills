@@ -12,6 +12,13 @@
       "description": "Reproducible provenance capture for computational analyses: steps, versions, checksums, plus a reproducibility checklist.",
       "version": "0.3.1",
       "license": "MIT"
+    },
+    {
+      "name": "record-keeping",
+      "source": "./plugins/record-keeping",
+      "description": "Human-side records for research projects: resumable README, decision log (why and whose call), text-only git per step, verified archiving before storage expires.",
+      "version": "0.1.0",
+      "license": "MIT"
     }
   ]
 }

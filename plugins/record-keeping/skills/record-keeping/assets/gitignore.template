@@ -1,0 +1,6 @@
+# Whitelist: track only small text records (scripts, README, decisions, sample tables,
+# provenance). Everything else, including all data, is ignored unless listed below.
+# Add paths with `records.py track <path>`.
+/*
+!/.gitignore
+/provenance/.manifest.lock

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "record-keeping",
+  "version": "0.1.0",
+  "description": "Keeps the human-readable records of a multi-session research project: a README that says how to resume, a decision log (what, why, whose call, what it replaces), a text-only git history with one commit per step, and verified archiving before scratch storage expires. Pairs with provenance-log.",
+  "author": {
+    "name": "Meng-Ching Ko",
+    "email": "mengchingko@gmail.com"
+  },
+  "homepage": "https://github.com/maggieMCKO/claude-skills/tree/main/plugins/record-keeping",
+  "repository": "https://github.com/maggieMCKO/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "reproducibility",
+    "lab-notebook",
+    "decision-log",
+    "research-software",
+    "hpc"
+  ]
+}

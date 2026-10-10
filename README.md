@@ -27,6 +27,7 @@ picks up new plugins and versions.
 | Plugin | What it does | Version |
 |---|---|---|
 | [provenance-log](plugins/provenance-log/) | Records every step, software version, script and input/output checksum of a computational analysis while it runs, with an automatic Bash-command hook and a three-axis reproducibility checklist. | 0.3.1 |
+| [record-keeping](plugins/record-keeping/) | Keeps a resumable README, a decision log (what, why, whose call, what it replaces), a text-only git history with one commit per step, and verified archiving before scratch storage expires. Pairs with provenance-log. | 0.1.0 |
 
 ## claude.ai and Claude Science (skill upload)
 

@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "record-keeping: decision log, resumable README and archiving for computational research projects"
+abstract: >-
+  An Agent Skill and standalone CLI that keeps the human-readable records of a
+  multi-session computational analysis: a README that says how to resume, a
+  numbered decision log stating why and whose call each choice was, a text-only
+  git history with one commit per step, and checksum-verified archiving before
+  scratch storage expires. Companion to provenance-log.
+type: software
+authors:
+  - family-names: Ko
+    given-names: Meng-Ching
+    orcid: "https://orcid.org/0000-0002-2234-9380"
+    # affiliation: ""
+version: 0.1.0
+date-released: "2026-10-10"
+license: MIT
+repository-code: "https://github.com/maggieMCKO/claude-skills/tree/main/plugins/record-keeping"
+keywords:
+  - reproducibility
+  - lab-notebook
+  - decision-log
+  - research-software
+  - agent-skill
+# Uncomment after the first Zenodo release mints a DOI:
+# identifiers:
+#   - description: "Archived snapshot of all versions"
+#     type: doi
+#     value: 10.5281/zenodo.XXXXXXX
