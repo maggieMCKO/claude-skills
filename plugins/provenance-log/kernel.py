@@ -75,3 +75,24 @@ def prov_finalize(root=None):
 def prov_verify(root=None):
     """Re-checksum tracked files. Returns 1 if anything drifted."""
     return prov_call(["verify"], root)
+
+
+def prov_render(root=None):
+    """Write PROVENANCE.md mid-run without marking the run finished."""
+    return prov_call(["render"], root)
+
+
+def prov_supersede(step, reason, retire=None, root=None):
+    """Mark step `step` as corrected; retire stale file entries from verify."""
+    args = ["supersede", "--step", step, "--reason", reason]
+    for f in (retire or []):
+        args += ["--retire", f]
+    return prov_call(args, root)
+
+
+def prov_migrate(old=None, new=None, root=None):
+    """Upgrade the manifest schema; optionally rewrite a moved path prefix."""
+    args = ["migrate"]
+    if old:
+        args += ["--from", old, "--to", new]
+    return prov_call(args, root)

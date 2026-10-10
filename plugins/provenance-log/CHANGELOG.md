@@ -3,6 +3,50 @@
 Follows [Semantic Versioning](https://semver.org). Versions below 1.0.0 signal
 that the command-line interface may still change.
 
+## 0.3.0 - 2026-10-10
+
+Fixes found while using the tool on a multi-day RNA-seq analysis. Each has a regression test
+that fails on 0.2.1 (23 tests, 69 assertions).
+
+### Fixed
+- **Duplicate file entries.** Paths were stored as typed, so `scripts/a.sh` and
+  `/abs/project/scripts/a.sh` were two unrelated entries; re-recording a script under one form
+  left the other reporting `CHANGED` forever. Files inside the project are now keyed by their
+  path relative to the project root (the directory holding `provenance/`), and other files by
+  absolute real path (symlinks resolved).
+- **False drift after moving a project.** With project-relative keys, moving the whole project
+  needs no rewrite and `verify` stays clean.
+- **Lost script versions.** Only the latest checksum was kept per file, so an earlier step could
+  not say which version of a since-edited script it ran, and the old text was gone. Each step now
+  stores its own `hashes`, and every recorded script is snapshotted to
+  `provenance/scripts/<sha256-prefix>-<name>` (2 MB limit, `PROVENANCE_SNAPSHOT_MAX`).
+- **Unrecorded edits.** The plugin hook now also fires on `Edit|Write|MultiEdit|NotebookEdit`;
+  when the agent changes a file the manifest already tracks, the new version is logged as its own
+  step. Untracked files and no-op writes are ignored. Shell edits (`sed -i`, …) still need an
+  explicit `step`; `SKILL.md` now says so.
+- **Uncorrectable mistakes.** A wrong entry could never be removed (steps are append-only).
+- **`finalize` misused for interim reports**, stamping unfinished runs as finished.
+
+### Added
+- `render`: write `PROVENANCE.md` without marking the run finished.
+- `supersede --step N --reason ... [--retire FILE]`: mark a step corrected and stop verifying a
+  stale entry, which moves to `retired_files` with its reason and appears in the report.
+- `migrate [--from OLD --to NEW]`: upgrade a `provenance-log/1` manifest (merging keys that named
+  one file two ways; the most recently seen entry wins) and optionally rewrite a moved path prefix.
+  Command strings are left as run.
+- Per-step git state (`commit`, `dirty`) when the project is a git repository; previously only at
+  `init`, so a repository created later was never recorded.
+- Report: per-step checksums, git commit, superseded markers, snapshot column, retired entries.
+- `kernel.py`: `prov_render`, `prov_supersede`, `prov_migrate`.
+- `SKILL.md`: "Keeping the record current" rules.
+
+### Changed
+- Manifest schema `provenance-log/2`. `/1` manifests remain readable and verifiable as before;
+  `step` and `verify` print a hint to run `migrate`.
+- `install_hook.py` (copied installs) adds a second `PostToolUse` group for the edit tools, kept
+  separate from the Bash group so other tools' Bash hooks are not widened; re-running it upgrades
+  a 0.2.x install. `--remove` removes both.
+
 ## 0.2.1 - 2026-09-27
 
 ### Changed

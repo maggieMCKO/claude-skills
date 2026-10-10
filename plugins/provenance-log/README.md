@@ -75,7 +75,8 @@ python3 $P init --title "Variant calling, cohort A"
 python3 $P env --probe bwa --probe samtools --probe bcftools
 python3 $P step --cmd "bwa mem ref.fa reads.fq.gz > aligned.sam" \
                 --in reads.fq.gz --out aligned.sam --script scripts/align.sh
-python3 $P finalize        # writes provenance/PROVENANCE.md
+python3 $P render          # interim provenance/PROVENANCE.md (run stays open)
+python3 $P finalize        # mark the run finished and write the report
 python3 $P verify          # re-checksums; exit 1 if anything drifted
 ```
 
@@ -90,11 +91,36 @@ manuscript: it catches a result reported from a file that was later overwritten.
 Use `--deviation` whenever you depart from the intended method. Deviations get their own
 section in the report, which is exactly what a reader needs and what is otherwise forgotten.
 
+### Paths, script versions and corrections (0.3.0)
+
+- **One key per file.** Files inside the project (the directory holding `provenance/`) are
+  stored by their path relative to it; files outside it by their absolute real path. Typing a
+  path relative in one step and absolute in the next no longer creates two entries, and moving
+  the whole project keeps `verify` clean.
+- **Every script version stays readable.** Each `--script` is copied to
+  `provenance/scripts/<sha256-prefix>-<name>` (skipped above 2 MB;
+  `PROVENANCE_SNAPSHOT_MAX` to change), and each step stores the checksums it saw. After a
+  script is edited, earlier steps still name the exact version they ran.
+- **Per-step git state.** When the project is a git repository, each `step` records the commit
+  and whether the working tree had uncommitted changes.
+- **Corrections without deleting history.** Steps are append-only.
+  `supersede --step N --reason "..." [--retire FILE]` marks a step as corrected (shown in the
+  report) and stops `verify` checking a stale or mistaken file entry, keeping it under
+  "Retired file entries" with the reason.
+- **Moving data, or upgrading an older manifest.** `migrate` converts a 0.2.x
+  (`provenance-log/1`) manifest to project-relative keys, merging duplicate entries;
+  `migrate --from /old/prefix --to /new/prefix` also rewrites paths after data moved outside
+  the project. Recorded command strings are left untouched: they are history.
+
 ## Automatic capture
 
 Claude Code supports [hooks](https://code.claude.com/docs/en/hooks-guide). A `PostToolUse`
 hook on `Bash` appends every command the agent runs to the manifest with no cooperation from
-the agent — capture that does not depend on the agent choosing to log.
+the agent — capture that does not depend on the agent choosing to log. Since 0.3.0 the same
+hook also fires on the agent's edit tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`): when
+one changes a file the manifest already tracks, the new version is recorded as its own step
+(checksum, snapshot, `changed_from`). Untracked files are ignored. Shell edits (`sed -i`, …)
+are not detected this way — record those with an explicit `step`.
 
 **Plugin installs get this automatically** (`hooks/hooks.json`). It stays silent in any
 directory without a `provenance/manifest.json`, so it has no effect on projects you have not
@@ -113,7 +139,9 @@ Restart the agent afterwards. `--project` writes `./.claude/settings.json` inste
 global config and points the hook at the project's own copy of the skill. The installer backs
 up the existing settings file with a timestamp, preserves every other setting and every other
 hook, appends rather than replaces if you already have a `PostToolUse` Bash hook, is
-idempotent, and refuses to modify a file that is not valid JSON.
+idempotent, and refuses to modify a file that is not valid JSON. The edit-tool hook goes in its
+own group, so another tool's hook in your Bash group is never made to fire on edits; re-running
+the installer upgrades a 0.2.x install by adding that group.
 
 **Upgrading from 0.1.x to the plugin?** Remove the settings-file hook first
 (`install_hook.py --remove --apply`), otherwise both fire. Nothing is double-counted either
@@ -205,9 +233,12 @@ A count above zero means the hook is live.
 python3 tests/test_provenance.py -v
 ```
 
-15 tests, stdlib only. Each corresponds to a defect that was observed rather than imagined:
+23 tests, stdlib only. Each corresponds to a defect that was observed rather than imagined:
 capped-hash false positives, lost steps under concurrent hook writes, usage lines recorded as
-versions, hooks failing when the agent has changed directory, and secret leakage.
+versions, hooks failing when the agent has changed directory, secret leakage, and (0.3.0)
+duplicate keys from relative vs absolute paths, false drift after moving a project, lost
+script versions, uncorrectable wrong entries, unrecorded script edits, and an interim report
+stamping the run as finished.
 
 ## The reproducibility checklist
 
@@ -225,7 +256,7 @@ sampling frame nobody recorded is gone.
 ## Citing
 
 `CITATION.cff` carries machine-readable metadata; GitHub renders a "Cite this
-repository" button from it. Current version: **0.2.1**.
+repository" button from it. Current version: **0.3.0**.
 
 For a citable, versioned archive, enable the Zenodo–GitHub integration and cut a
 release: Zenodo mints a DOI per release plus a concept DOI that always resolves to
@@ -244,12 +275,17 @@ versions, hooks failing after a directory change, credential leakage into the
 manifest, a project-scoped install pointing at the personal copy, and duplicate
 steps when the hook is installed both globally and per project. Each was reproduced
 by a failing test before being fixed, and each has a regression test in
-`tests/test_provenance.py` (15 tests, 44 assertions, covering both
+`tests/test_provenance.py` (15 tests, 44 assertions at the time, covering both
 `scripts/provenance.py` and `install_hook.py`).
 
 Two of those were found by review rather than by me, and one — the timezone skew
 that silently disabled duplicate suppression — was found by the test I wrote for
 the fix, which is the argument for writing the test first.
+
+0.3.0 came from using the tool on a multi-day RNA-seq analysis with Claude Code, where
+the record went wrong in ways the earlier tests did not cover (see `CHANGELOG.md`). Each
+of those was likewise reproduced by a test that fails on 0.2.1 before being fixed; the
+suite is now 23 tests and 69 assertions.
 
 Consistent with the position of the ICMJE, COPE and most journals, an AI assistant
 is not credited as an author: it cannot take responsibility for the work, and AI

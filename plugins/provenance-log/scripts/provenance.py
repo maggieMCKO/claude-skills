@@ -9,10 +9,17 @@ Stdlib only, Python 3.8+. Runs in an agent kernel, a bare shell, or a job script
                            --in reads.fq.gz --out aligned.sam \
                            --script scripts/align.sh \
                            --deviation "aligner B used instead of A (see README)"
-    provenance.py finalize                 # writes PROVENANCE.md
+    provenance.py render                   # rewrite PROVENANCE.md mid-run
+    provenance.py finalize                 # render + stamp the run as finished
     provenance.py verify                   # exit 1 if a tracked file drifted
+    provenance.py supersede --step 6 --reason "wrong path" --retire scripts/x.sh
+    provenance.py migrate [--from OLD --to NEW]   # upgrade / relocate a manifest
 
 Writes provenance/manifest.json (machine-readable) and PROVENANCE.md (human).
+Files inside the project (the directory holding provenance/) are keyed by their
+path relative to it, so moving the whole project needs no rewrite; files
+outside it are keyed by absolute real path. Recorded scripts are snapshotted
+into provenance/scripts/ so every version that ran stays readable.
 
 Privacy: command strings are recorded verbatim apart from best-effort redaction
 of named secrets and known token shapes. Review a manifest before committing it.
@@ -27,8 +34,17 @@ import subprocess
 import sys
 import time
 
-SCHEMA = "provenance-log/1"
+SCHEMA = "provenance-log/2"
+# /1 manifests keyed files by the path string as typed, so "scripts/a.sh" and
+# "/abs/project/scripts/a.sh" became two unrelated entries. /2 normalises keys
+# (see file_key). /1 manifests stay readable; `migrate` upgrades them.
+LEGACY_SCHEMA = "provenance-log/1"
 DEFAULT_DIR = "provenance"
+SNAPSHOT_DIR = "scripts"
+# Scripts larger than this are checksummed but not copied.
+SNAPSHOT_MAX_BYTES = 2_000_000
+# Tools whose PostToolUse payload names a file the agent just modified.
+EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
 def utcnow():
@@ -84,6 +100,37 @@ def with_lock(root, mutate):
         finally:
             fcntl.flock(lf, fcntl.LOCK_UN)
     return out
+
+
+def project_root(root=None):
+    """The directory that holds the manifest directory, symlinks resolved."""
+    return os.path.dirname(os.path.realpath(root or DEFAULT_DIR))
+
+
+def is_legacy(m):
+    return m.get("schema") == LEGACY_SCHEMA
+
+
+def file_key(path, root=None):
+    """Canonical manifest key for `path`.
+
+    Inside the project: the path relative to the project root, so the record
+    survives moving the whole project. Outside it: the absolute real path.
+    realpath, not abspath: a home directory reached through a symlink would
+    otherwise produce two keys for one file.
+    """
+    rp = os.path.realpath(path)
+    pr = project_root(root)
+    if rp == pr or rp.startswith(pr + os.sep):
+        return os.path.relpath(rp, pr)
+    return rp
+
+
+def resolve_key(key, m, root=None):
+    """Turn a manifest key back into a path that can be opened."""
+    if os.path.isabs(key) or is_legacy(m):
+        return key           # /1 stored paths as typed, relative to the cwd of the day
+    return os.path.join(project_root(root), key)
 
 
 def find_manifest_dir(start):
@@ -201,26 +248,55 @@ def sha256(path, cap_bytes=None):
     return h.hexdigest(), n, False
 
 
-def record_file(m, path, role, cap_bytes=None):
-    """Register a file with its checksum; flags drift if already seen with a different hash."""
+def snapshot_script(path, digest, nbytes, root=None):
+    """Copy a script into provenance/scripts/ under a content-addressed name.
+
+    The manifest alone keeps only a checksum, so once a script is edited the
+    version an earlier step ran is unrecoverable. A copy per distinct content
+    (a few KB each) keeps every version readable. Returns the snapshot path
+    relative to the manifest directory, or None if the file is too large.
+    """
+    limit = int(os.environ.get("PROVENANCE_SNAPSHOT_MAX", SNAPSHOT_MAX_BYTES))
+    if nbytes > limit:
+        return None
+    rel = os.path.join(SNAPSHOT_DIR, "%s-%s" % (digest[:12], os.path.basename(path)))
+    dest = os.path.join(root or DEFAULT_DIR, rel)
+    if not os.path.exists(dest):
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copyfile(path, dest)
+    return rel
+
+
+def record_file(m, path, role, cap_bytes=None, root=None):
+    """Register a file with its checksum; flags drift if already seen with a different hash.
+
+    Returns (key, status, sha256-or-None).
+    """
+    key = path if is_legacy(m) else file_key(path, root)
     if not os.path.exists(path):
-        m["files"][path] = {"role": role, "missing": True, "seen": utcnow()}
-        return "MISSING"
+        m["files"][key] = {"role": role, "missing": True, "seen": utcnow(), "as_given": path}
+        return key, "MISSING", None
     digest, nbytes, partial = sha256(path, cap_bytes)
-    prev = m["files"].get(path)
+    prev = m["files"].get(key)
     entry = {"role": role, "sha256": digest, "bytes": nbytes,
              "partial_hash": partial, "seen": utcnow()}
+    if path != key:
+        entry["as_given"] = path
     # Persist the cap the hash was computed under, so `verify` can reproduce it
     # exactly. Without this, verifying a capped file without repeating the same
     # --cap-bytes re-hashes it in full and reports a false CHANGED.
     if partial:
         entry["hashed_bytes"] = nbytes
+    if role == "script" and not partial:
+        snap = snapshot_script(path, digest, nbytes, root)
+        if snap:
+            entry["snapshot"] = snap
+    status = "ok"
     if prev and prev.get("sha256") and prev["sha256"] != digest:
         entry["changed_from"] = prev["sha256"]
-        m["files"][path] = entry
-        return "CHANGED"
-    m["files"][path] = entry
-    return "ok"
+        status = "CHANGED"
+    m["files"][key] = entry
+    return key, status, digest
 
 
 def run(cmd, timeout=20):
@@ -313,20 +389,29 @@ def capture_env(probes):
     return env
 
 
-def capture_git():
+def capture_git(cwd=None, brief=False):
+    """Git state of the repository containing `cwd` (the project root by default).
+
+    brief=True returns only commit and dirty flag, cheap enough for every step.
+    """
     if not shutil.which("git"):
         return {"available": False}
-    head = run(["git", "rev-parse", "HEAD"])
-    if head.startswith("<probe failed") or "not a git repository" in head.lower():
+    g = ["git", "-C", cwd] if cwd else ["git"]
+    head = run(g + ["rev-parse", "HEAD"])
+    if (not head or head.startswith("<probe failed") or "not a git repository" in head.lower()
+            or "fatal" in head.lower()):
         return {"available": False}
-    status = run(["git", "status", "--porcelain"])
+    status = run(g + ["status", "--porcelain"])
+    dirty = bool(status and not status.startswith("<probe failed"))
+    if brief:
+        return {"commit": head.split()[0], "dirty": dirty}
     return {
         "available": True,
         "commit": head.split()[0] if head else None,
-        "branch": run(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
-        "dirty": bool(status and not status.startswith("<probe failed")),
+        "branch": run(g + ["rev-parse", "--abbrev-ref", "HEAD"]),
+        "dirty": dirty,
         "dirty_files": [l[3:] for l in status.splitlines()][:50] if status else [],
-        "remote": run(["git", "config", "--get", "remote.origin.url"]) or None,
+        "remote": run(g + ["config", "--get", "remote.origin.url"]) or None,
     }
 
 
@@ -336,7 +421,8 @@ def cmd_init(a):
          "created_utc": utcnow(), "finalized_utc": None,
          "agent": {"model": os.environ.get("PROVENANCE_AGENT_MODEL"),
                    "surface": os.environ.get("PROVENANCE_AGENT_SURFACE")},
-         "environment": None, "git": capture_git(), "steps": [], "files": {}}
+         "environment": None, "git": capture_git(project_root(a.dir)),
+         "steps": [], "files": {}, "retired_files": {}}
     save(m, a.dir)
     print("initialised %s (run_id=%s)" % (manifest_path(a.dir), run_id))
 
@@ -353,27 +439,45 @@ def cmd_env(a):
         print("  %-12s %s" % (name, fmt_version(info)))
 
 
+def append_step(m, cmd, inputs=(), outputs=(), scripts=(), hashes=None, note=None,
+                deviation=None, exit_code=None, git=None):
+    step = {"n": len(m["steps"]) + 1, "utc": utcnow(), "cmd": cmd,
+            "inputs": list(inputs), "outputs": list(outputs), "scripts": list(scripts),
+            # Each step keeps the checksums it saw. m["files"] holds only the
+            # latest, so without this an earlier step cannot say which version
+            # of a since-edited script it ran.
+            "hashes": hashes or {},
+            "note": note, "deviation": deviation, "exit_code": exit_code}
+    if git:
+        step["git"] = git
+    m["steps"].append(step)
+    return step
+
+
 def cmd_step(a):
     flags = []
+    git = capture_git(project_root(a.dir), brief=True)
 
     def mutate(m):
-        for f in (a.inp or []):
-            flags.append((f, record_file(m, f, "input", a.cap_bytes)))
-        for f in (a.out or []):
-            flags.append((f, record_file(m, f, "output", a.cap_bytes)))
-        for f in (a.script or []):
-            flags.append((f, record_file(m, f, "script", a.cap_bytes)))
-        step = {"n": len(m["steps"]) + 1, "utc": utcnow(), "cmd": redact(a.cmd),
-                "inputs": a.inp or [], "outputs": a.out or [],
-                "scripts": a.script or [], "note": a.note,
-                "deviation": a.deviation, "exit_code": a.exit_code}
-        m["steps"].append(step)
-        return step
+        keys = {"input": [], "output": [], "script": []}
+        hashes = {}
+        for role, paths in (("input", a.inp), ("output", a.out), ("script", a.script)):
+            for f in (paths or []):
+                key, status, digest = record_file(m, f, role, a.cap_bytes, a.dir)
+                keys[role].append(key)
+                hashes[key] = digest
+                flags.append((key, status))
+        return append_step(m, redact(a.cmd), keys["input"], keys["output"], keys["script"],
+                           hashes, a.note, a.deviation, a.exit_code,
+                           git if git.get("commit") else None), is_legacy(m)
 
-    step = with_lock(a.dir, mutate)
+    step, legacy = with_lock(a.dir, mutate)
     warn = [f for f, s in flags if s != "ok"]
     print("step %d recorded%s" % (step["n"], ("  [attention: %s]" % ", ".join(
         "%s=%s" % (f, s) for f, s in flags if s != "ok")) if warn else ""))
+    if legacy:
+        print("note: this manifest uses schema %s (paths stored as typed); "
+              "run `provenance.py migrate` to upgrade" % LEGACY_SCHEMA)
 
 
 def cmd_hook(a):
@@ -389,7 +493,11 @@ def cmd_hook(a):
         sys.exit(0)
     try:
         payload = json.load(sys.stdin)
-        cmd = (payload.get("tool_input") or {}).get("command")
+        tool_input = payload.get("tool_input") or {}
+        if payload.get("tool_name") in EDIT_TOOLS:
+            hook_file_edit(a, payload, tool_input)
+            sys.exit(0)
+        cmd = tool_input.get("command")
         if not cmd:
             sys.exit(0)
         # Do not record our own bookkeeping as analysis steps.
@@ -412,11 +520,7 @@ def cmd_hook(a):
             # pass the check and then both append.
             if is_duplicate_hook(m, safe):
                 return
-            m["steps"].append(
-                {"n": len(m["steps"]) + 1, "utc": utcnow(), "cmd": safe,
-                 "inputs": [], "outputs": [], "scripts": [],
-                 "note": "auto-captured via agent PostToolUse hook",
-                 "deviation": None, "exit_code": None})
+            append_step(m, safe, note="auto-captured via agent PostToolUse hook")
 
         with_lock(root, mutate)
     except SystemExit:
@@ -426,37 +530,168 @@ def cmd_hook(a):
     sys.exit(0)
 
 
+def hook_file_edit(a, payload, tool_input):
+    """Re-record a TRACKED file the agent just changed with an edit tool.
+
+    The observed failure: a script recorded in step N is edited, the edited
+    version is run, and nobody records a new step -- so `verify` later reports
+    CHANGED with no trace of when or why. Logging the edit as its own step (new
+    checksum, snapshot, `changed_from`) keeps the record current. Untracked
+    files are ignored so ordinary editing does not flood the manifest.
+    """
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if not path:
+        return
+    if not os.path.isabs(path):
+        path = os.path.join(payload.get("cwd") or os.getcwd(), path)
+    root = a.dir if a.dir != DEFAULT_DIR else None
+    if root is None:
+        root = find_manifest_dir(os.path.dirname(path)) or \
+            find_manifest_dir(payload.get("cwd") or os.getcwd())
+    if not root or not os.path.exists(manifest_path(root)):
+        return
+    if os.path.realpath(path).startswith(os.path.realpath(root) + os.sep):
+        return               # the manifest's own files
+
+    def mutate(m):
+        key = path if is_legacy(m) else file_key(path, root)
+        prev = m["files"].get(key)
+        if not prev:
+            return
+        key, status, digest = record_file(m, path, prev.get("role") or "file", None, root)
+        if status == "ok":
+            return           # content unchanged (e.g. a no-op write)
+        bucket = {"script": "scripts", "input": "inputs", "output": "outputs"}.get(
+            prev.get("role"), "outputs")
+        kw = {bucket: [key]}
+        append_step(m, "%s %s" % (payload.get("tool_name"), key), hashes={key: digest},
+                    note="auto: tracked file edited via %s hook; previous sha256 %s"
+                    % (payload.get("tool_name"), (prev.get("sha256") or "?")[:12]), **kw)
+
+    with_lock(root, mutate)
+
+
 def cmd_verify(a):
     m = load(a.dir)
     bad = []
-    for path, info in sorted(m["files"].items()):
+    for key, info in sorted(m["files"].items()):
         if not info.get("sha256"):
-            bad.append((path, "was missing at record time"))
+            bad.append((key, "was missing at record time"))
             continue
+        path = resolve_key(key, m, a.dir)
         if not os.path.exists(path):
-            bad.append((path, "GONE"))
+            bad.append((key, "GONE"))
             continue
         # Reuse the cap recorded at capture time, not whatever is on this
         # command line, so a capped hash is compared like with like.
         cap = info.get("hashed_bytes") if info.get("partial_hash") else None
         digest, _, _ = sha256(path, cap)
         if digest != info["sha256"]:
-            bad.append((path, "CHANGED since recorded"))
-    print("%d files tracked, %d discrepancies" % (len(m["files"]), len(bad)))
-    for path, why in bad:
-        print("  %-60s %s" % (path, why))
+            bad.append((key, "CHANGED since recorded"))
+    retired = len(m.get("retired_files") or {})
+    print("%d files tracked, %d discrepancies%s" % (
+        len(m["files"]), len(bad), (" (%d retired, not checked)" % retired) if retired else ""))
+    for key, why in bad:
+        print("  %-60s %s" % (key, why))
+    if is_legacy(m):
+        print("note: schema %s manifest; run `provenance.py migrate` to upgrade" % LEGACY_SCHEMA)
     return 1 if bad else 0
 
 
+def cmd_supersede(a):
+    """Mark an earlier step as superseded and optionally retire stale file entries.
+
+    Steps are append-only, so a mistake (a wrong path, a mis-stated command)
+    cannot be deleted -- before this, a bad entry made `verify` fail forever.
+    The correction is itself a step, and retired entries keep their reason.
+    """
+    def mutate(m):
+        if not 1 <= a.step <= len(m["steps"]):
+            sys.exit("no step %d (manifest has %d)" % (a.step, len(m["steps"])))
+        retired = []
+        for f in (a.retire or []):
+            key = f if (f in m["files"] or is_legacy(m)) else file_key(f, a.dir)
+            if key not in m["files"]:
+                sys.exit("not a tracked file: %s" % f)
+            entry = m["files"].pop(key)
+            entry.update({"retired_utc": utcnow(), "retired_reason": a.reason,
+                          "retired_by_step": len(m["steps"]) + 1})
+            m.setdefault("retired_files", {})[key] = entry
+            retired.append(key)
+        step = append_step(m, "supersede step %d" % a.step,
+                           note=a.reason + ("; retired: %s" % ", ".join(retired) if retired else ""),
+                           deviation="correction of step %d: %s" % (a.step, a.reason))
+        m["steps"][a.step - 1]["superseded"] = {"by_step": step["n"], "reason": a.reason,
+                                                "utc": step["utc"]}
+        return step, retired
+
+    step, retired = with_lock(a.dir, mutate)
+    print("step %d supersedes step %d%s" % (step["n"], a.step,
+          ("; retired %d file entr%s" % (len(retired), "y" if len(retired) == 1 else "ies"))
+          if retired else ""))
+
+
+def cmd_migrate(a):
+    """Upgrade a manifest to the current schema, optionally rewriting a path prefix.
+
+    --from/--to rewrites absolute paths after data or a project was moved.
+    Keys inside the project then become project-relative, and keys that typed
+    the same file two ways are merged (the most recently seen entry wins).
+    Command strings are left as they were run: they are history.
+    """
+    def fix(p):
+        if a.old and (p == a.old or p.startswith(a.old.rstrip(os.sep) + os.sep)):
+            p = a.new.rstrip(os.sep) + p[len(a.old.rstrip(os.sep)):]
+        if not os.path.isabs(p):
+            p = os.path.join(project_root(a.dir), p)
+        return file_key(p, a.dir)
+
+    def mutate(m):
+        before = len(m["files"])
+        merged = {}
+        for key, info in m["files"].items():
+            k = fix(key)
+            if k in merged and (merged[k].get("seen") or "") > (info.get("seen") or ""):
+                continue
+            merged[k] = info
+        m["files"] = merged
+        m["retired_files"] = {fix(k): v for k, v in (m.get("retired_files") or {}).items()}
+        for s in m["steps"]:
+            for field in ("inputs", "outputs", "scripts"):
+                s[field] = [fix(p) for p in s.get(field) or []]
+            if s.get("hashes"):
+                s["hashes"] = {fix(k): v for k, v in s["hashes"].items()}
+        old_schema = m.get("schema")
+        m["schema"] = SCHEMA
+        append_step(m, "migrate%s" % ((" --from %s --to %s" % (a.old, a.new)) if a.old else ""),
+                    note="manifest schema %s -> %s; %d file keys -> %d"
+                    % (old_schema, SCHEMA, before, len(merged)))
+        return before, len(merged), old_schema
+
+    if bool(a.old) != bool(a.new):
+        sys.exit("--from and --to go together")
+    before, after, old = with_lock(a.dir, mutate)
+    print("migrated %s -> %s: %d file keys -> %d" % (old, SCHEMA, before, after))
+
+
 def cmd_finalize(a):
+    """Stamp the run as finished, then render. Re-running is harmless."""
+    def mutate(m):
+        m["finalized_utc"] = utcnow()
+    with_lock(a.dir, mutate)
+    return cmd_render(a)
+
+
+def cmd_render(a):
+    """Write PROVENANCE.md from the manifest without marking the run finished."""
     m = load(a.dir)
-    m["finalized_utc"] = utcnow()
-    save(m, a.dir)
     env = m.get("environment") or {}
     lines = ["# Provenance: %s" % (m.get("title") or m["run_id"]), ""]
     lines += ["- run_id: `%s`" % m["run_id"],
+              "- schema: %s" % m.get("schema"),
               "- created: %s" % m["created_utc"],
-              "- finalized: %s" % m["finalized_utc"],
+              "- finalized: %s" % (m.get("finalized_utc") or "not yet (interim report)"),
+              "- rendered: %s" % utcnow(),
               "- platform: %s (%s), %s cores" % (env.get("platform", "?"),
                                                  env.get("machine", "?"),
                                                  env.get("cpu_count", "?")),
@@ -488,23 +723,44 @@ def cmd_finalize(a):
             lines.append("- step %d: %s" % (s["n"], s["deviation"]))
     lines += ["", "## Steps", ""]
     for s in m["steps"]:
-        lines.append("### %d. %s" % (s["n"], s["utc"]))
-        lines.append("")
+        hashes = s.get("hashes") or {}
+
+        def fmt(f):
+            h = hashes.get(f)
+            return "`%s`%s" % (f, (" (`%s`)" % h[:12]) if h else "")
+
+        title = "### %d. %s" % (s["n"], s["utc"])
+        if s.get("superseded"):
+            title += " — superseded by step %d" % s["superseded"]["by_step"]
+        lines += [title, ""]
         lines.append("```\n%s\n```" % (s.get("cmd") or "(no command recorded)"))
-        for label, key in (("inputs", "inputs"), ("outputs", "outputs"), ("scripts", "scripts")):
-            if s.get(key):
-                lines.append("- %s: %s" % (label, ", ".join("`%s`" % f for f in s[key])))
+        for label in ("inputs", "outputs", "scripts"):
+            if s.get(label):
+                lines.append("- %s: %s" % (label, ", ".join(fmt(f) for f in s[label])))
+        if s.get("git"):
+            lines.append("- git: `%s`%s" % (s["git"]["commit"][:12],
+                                             " (dirty)" if s["git"].get("dirty") else ""))
+        if s.get("superseded"):
+            lines.append("- superseded: %s" % s["superseded"]["reason"])
         if s.get("note"):
             lines.append("- note: %s" % s["note"])
         lines.append("")
     tracked = m.get("files") or {}
     if tracked:
         lines += ["## Files and checksums", "",
-                  "| file | role | bytes | sha256 |", "|---|---|---|---|"]
-        for path, info in sorted(tracked.items()):
-            lines.append("| `%s` | %s | %s | `%s` |" % (
-                path, info.get("role"), info.get("bytes", "-"),
-                (info.get("sha256") or "MISSING")[:16]))
+                  "| file | role | bytes | sha256 | snapshot |", "|---|---|---|---|---|"]
+        for key, info in sorted(tracked.items()):
+            lines.append("| `%s` | %s | %s | `%s` | %s |" % (
+                key, info.get("role"), info.get("bytes", "-"),
+                (info.get("sha256") or "MISSING")[:16],
+                ("`%s`" % info["snapshot"]) if info.get("snapshot") else "-"))
+    retired = m.get("retired_files") or {}
+    if retired:
+        lines += ["", "## Retired file entries", "",
+                  "| file | retired by step | reason |", "|---|---|---|"]
+        for key, info in sorted(retired.items()):
+            lines.append("| `%s` | %s | %s |" % (key, info.get("retired_by_step"),
+                                                 info.get("retired_reason")))
     out = os.path.join(a.dir or DEFAULT_DIR, "PROVENANCE.md")
     with open(out, "w") as fh:
         fh.write("\n".join(lines) + "\n")
@@ -544,8 +800,22 @@ def build_parser():
     s = sub.add_parser("verify", help="re-checksum tracked files and report drift")
     s.set_defaults(func=cmd_verify)
 
-    s = sub.add_parser("finalize", help="write PROVENANCE.md")
+    s = sub.add_parser("render", help="write PROVENANCE.md (interim; run is not marked finished)")
+    s.set_defaults(func=cmd_render)
+
+    s = sub.add_parser("finalize", help="mark the run finished and write PROVENANCE.md")
     s.set_defaults(func=cmd_finalize)
+
+    s = sub.add_parser("supersede", help="mark an earlier step corrected; optionally retire file entries")
+    s.add_argument("--step", type=int, required=True)
+    s.add_argument("--reason", required=True)
+    s.add_argument("--retire", action="append", help="tracked file to stop verifying (repeatable)")
+    s.set_defaults(func=cmd_supersede)
+
+    s = sub.add_parser("migrate", help="upgrade the manifest schema; optionally rewrite a moved path prefix")
+    s.add_argument("--from", dest="old", help="old absolute path prefix")
+    s.add_argument("--to", dest="new", help="new absolute path prefix")
+    s.set_defaults(func=cmd_migrate)
     return p
 
 

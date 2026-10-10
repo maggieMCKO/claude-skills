@@ -23,7 +23,10 @@ import sys
 import time
 
 EVENT = "PostToolUse"
-MATCHER = "Bash"
+# Bash: log commands. Edit tools: re-record a tracked file the agent edits (0.3.0).
+# Separate groups, so another tool's hook sharing the Bash group is never made
+# to fire on edits as well.
+MATCHERS = ("Bash", "Edit|Write|MultiEdit|NotebookEdit")
 # $HOME / $CLAUDE_PROJECT_DIR rather than ~ : hook commands are not guaranteed to
 # go through a shell that performs tilde expansion, but these are expanded by any
 # POSIX shell. A project install must point at the project's own copy of the
@@ -60,10 +63,10 @@ def load(path):
                  % (path, exc))
 
 
-def find_entry(cfg):
-    """Locate an existing PostToolUse group for our matcher, if any."""
+def find_entry(cfg, matcher):
+    """Locate an existing PostToolUse group for `matcher`, if any."""
     for group in (cfg.get("hooks", {}).get(EVENT) or []):
-        if group.get("matcher") == MATCHER:
+        if group.get("matcher") == matcher:
             return group
     return None
 
@@ -74,33 +77,42 @@ def has_our_hook(group):
 
 
 def merge(cfg, command):
-    """Add our hook, preserving all other settings and hooks. Returns action taken."""
+    """Add our hook for each matcher, preserving all other settings and hooks.
+
+    Returns the action taken. Re-running is idempotent, and upgrades a 0.2.x
+    install (Bash only) by adding the edit-tool group.
+    """
     cfg.setdefault("hooks", {}).setdefault(EVENT, [])
-    group = find_entry(cfg)
-    if group is None:
-        cfg["hooks"][EVENT].append(
-            {"matcher": MATCHER, "hooks": [{"type": "command", "command": command}]})
-        return "added a new %s/%s group" % (EVENT, MATCHER)
-    if has_our_hook(group):
-        return "already installed"
-    group.setdefault("hooks", []).append({"type": "command", "command": command})
-    return "appended to the existing %s/%s group (%d hook(s) already there)" % (
-        EVENT, MATCHER, len(group["hooks"]) - 1)
+    done = []
+    for matcher in MATCHERS:
+        group = find_entry(cfg, matcher)
+        if group is None:
+            cfg["hooks"][EVENT].append(
+                {"matcher": matcher, "hooks": [{"type": "command", "command": command}]})
+            done.append("added a new %s/%s group" % (EVENT, matcher))
+        elif not has_our_hook(group):
+            group.setdefault("hooks", []).append({"type": "command", "command": command})
+            done.append("appended to the existing %s/%s group (%d hook(s) already there)"
+                        % (EVENT, matcher, len(group["hooks"]) - 1))
+    return "; ".join(done) if done else "already installed"
 
 
 def unmerge(cfg):
-    group = find_entry(cfg)
-    if not group or not has_our_hook(group):
-        return "not present"
-    group["hooks"] = [h for h in group["hooks"]
-                      if "provenance-log" not in (h.get("command") or "")]
-    if not group["hooks"]:
-        cfg["hooks"][EVENT] = [g for g in cfg["hooks"][EVENT] if g is not group]
-        if not cfg["hooks"][EVENT]:
-            del cfg["hooks"][EVENT]
-        if not cfg["hooks"]:
-            del cfg["hooks"]
-    return "removed"
+    removed = False
+    for matcher in MATCHERS:
+        group = find_entry(cfg, matcher)
+        if not group or not has_our_hook(group):
+            continue
+        removed = True
+        group["hooks"] = [h for h in group["hooks"]
+                          if "provenance-log" not in (h.get("command") or "")]
+        if not group["hooks"]:
+            cfg["hooks"][EVENT] = [g for g in cfg["hooks"][EVENT] if g is not group]
+    if removed and EVENT in cfg.get("hooks", {}) and not cfg["hooks"][EVENT]:
+        del cfg["hooks"][EVENT]
+    if removed and not cfg.get("hooks"):
+        cfg.pop("hooks", None)
+    return "removed" if removed else "not present"
 
 
 def main():
@@ -134,7 +146,8 @@ def main():
     if a.project and not a.remove:
         global_path = settings_path(project=False)
         gcfg, gexists = load(global_path)
-        if gexists and find_entry(gcfg) and has_our_hook(find_entry(gcfg)):
+        gbash = find_entry(gcfg, MATCHERS[0]) if gexists else None
+        if gbash and has_our_hook(gbash):
             print("\nNOTE: the global hook is already installed at %s." % global_path)
             print("      Both will fire for every command. provenance.py drops the")
             print("      duplicate (identical command within %s s), so logging stays"

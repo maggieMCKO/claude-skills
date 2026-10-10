@@ -37,12 +37,36 @@ python scripts/provenance.py step \
   --deviation "bwa used instead of the planned aligner: the planned one mis-reports read counts on this platform"
 ```
 
-And close the run:
+Paths may be relative or absolute: files inside the project (the directory holding
+`provenance/`) are stored relative to it, so the record survives moving the whole project.
+Every `--script` is also copied into `provenance/scripts/` under a content-addressed name, and
+each step stores the checksums it saw, so an earlier step still points at the exact version it
+ran after the script is edited.
+
+Mid-run, and at the end:
 
 ```bash
-python scripts/provenance.py finalize   # writes PROVENANCE.md
+python scripts/provenance.py render     # interim PROVENANCE.md; run stays open
+python scripts/provenance.py finalize   # stamp the run finished + write PROVENANCE.md
 python scripts/provenance.py verify     # re-checksums everything; exit 1 on drift
 ```
+
+## Keeping the record current
+
+The usual way a record goes stale: a recorded script is edited, the new version is run, and no
+step is recorded. Rules:
+
+- **Re-record a script after every edit, before running it again**, in the same `step` that
+  runs it (`--script path`). The step will flag `CHANGED`; say why in `--note`/`--deviation`.
+- With the plugin hook, edits made with the agent's own edit tools to a *tracked* file are
+  logged automatically. Edits made through the shell (`sed -i`, `perl -pi`, a heredoc) are not:
+  the hook sees the command but cannot know which file it changed. Record those yourself.
+- Run `verify` before reporting results. Any `CHANGED` means an unrecorded change: record it
+  (and why) rather than ignoring it.
+- A mistaken step cannot be deleted. Correct it, and stop verifying a bad file entry:
+  `provenance.py supersede --step 6 --reason "path was wrong" --retire scripts/wrong.sh`.
+- External data moved (or a manifest from 0.2.x or earlier):
+  `provenance.py migrate [--from /old/prefix --to /new/prefix]`.
 
 ## Reading the record back
 
@@ -65,6 +89,7 @@ not), loading this skill defines the helpers directly:
 prov_init("Variant calling, cohort A")
 prov_env(probes=["samtools", "bcftools"])
 prov_step("bcftools call -mv", inputs=["aligned.bam"], outputs=["calls.vcf"])
+prov_render()            # interim report; prov_supersede(...), prov_migrate(...) also exist
 prov_finalize()
 ```
 
@@ -102,5 +127,5 @@ reviewer that read the reasoning tends to accept its premises.
 ## Installing
 
 See the repository `README.md` for plugin and manual install, the automatic-capture hook
-(on by default in the plugin; `PROVENANCE_HOOK=0` turns it off), privacy notes and
-troubleshooting.
+(on by default in the plugin: Bash commands, plus edits to tracked files; `PROVENANCE_HOOK=0`
+turns it off), privacy notes and troubleshooting.
