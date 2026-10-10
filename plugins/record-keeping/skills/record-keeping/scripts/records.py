@@ -242,6 +242,16 @@ def changed_record_files(root):
     return out
 
 
+def already_recorded(prov_dir, key, path):
+    """True if the manifest's latest checksum for this file matches its current content."""
+    try:
+        with open(os.path.join(prov_dir, "manifest.json")) as fh:
+            info = json.load(fh).get("files", {}).get(key) or {}
+    except (OSError, ValueError):
+        return False
+    return bool(info.get("sha256")) and not info.get("partial_hash") and info["sha256"] == sha256(path)
+
+
 def cmd_checkpoint(a):
     root = a.root
     if not is_repo(root):
@@ -254,6 +264,12 @@ def cmd_checkpoint(a):
         else:
             base = [sys.executable, cli, "--dir", prov_dir]
             recs = changed_record_files(root)
+            # The provenance-log hook already logs agent edits to tracked files; a
+            # second step for the same content is noise, so skip what is recorded.
+            done = [f for f in recs if already_recorded(prov_dir, f, os.path.join(root, f))]
+            if done:
+                print("already in provenance: %s" % ", ".join(done))
+            recs = [f for f in recs if f not in done]
             if recs:
                 cmd = base + ["step", "--cmd", "records: %s" % a.message,
                               "--note", "README/decision-log update recorded by records.py checkpoint"]

@@ -16,7 +16,8 @@ analysis on an HPC workspace that expires (README with a resume section, decisio
   - `decide` numbers entries D001…, supersedes without rewriting history, and keeps
     Claude's unconfirmed choices visible in `status` until the user confirms them.
   - `checkpoint` records README/DECISIONS edits as a provenance-log step, renders
-    PROVENANCE.md and commits.
+    PROVENANCE.md and commits. A file whose current checksum is already in the manifest
+    (e.g. logged by provenance-log's edit hook) is skipped, so edits are not recorded twice.
   - `archive` copies git-tracked files plus chosen result paths, verifies by SHA-256 and
     writes `ARCHIVE_MANIFEST.tsv`.
 - Templates for README, DECISIONS.md and the whitelist `.gitignore`.

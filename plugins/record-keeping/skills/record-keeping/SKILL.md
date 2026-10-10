@@ -98,7 +98,8 @@ downloaded, index built, all samples aligned, counts table made. After each:
 3. `$REC checkpoint -m "Align all 192 libraries (HISAT2)"`
 
 `checkpoint` records a provenance step for README/DECISIONS changes (so documentation
-edits are themselves in the record), runs `provenance.py render` (an interim report; do not
+edits are themselves in the record; a file whose current content provenance-log already
+holds, e.g. logged by its edit hook, is skipped rather than recorded twice), runs `provenance.py render` (an interim report; do not
 `finalize` mid-project, it marks the run finished), and commits everything git tracks. It
 finds provenance-log via `$PROVENANCE_PY`, the sibling plugin, or the plugin cache.
 

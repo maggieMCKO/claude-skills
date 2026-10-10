@@ -157,6 +157,19 @@ def test_checkpoint_records_provenance():
                        capture_output=True, text=True, env=env)
     check("no-op checkpoint: no extra provenance step",
           "provenance step" not in r.stdout, r.stdout)
+    # An edit the hook (or a manual step) already recorded must not get a second step.
+    with open(os.path.join(d, "README.md"), "a") as fh:
+        fh.write("- new open item\n")
+    subprocess.run([sys.executable, PROV, "--dir", pdir, "step", "--cmd", "hook-like edit",
+                    "--out", os.path.join(d, "README.md")], capture_output=True, cwd=d, env=ENV,
+                   check=True)
+    n = len(json.load(open(os.path.join(pdir, "manifest.json")))["steps"])
+    r = subprocess.run([sys.executable, CLI, "--root", d, "checkpoint", "-m", "Step 2"],
+                       capture_output=True, text=True, env=env)
+    m = json.load(open(os.path.join(pdir, "manifest.json")))
+    check("duplicate skipped", "already in provenance: README.md" in r.stdout, r.stdout)
+    check("no second step", len(m["steps"]) == n, (n, len(m["steps"])))
+    check("still committed", "Step 2" in git(d, "log", "-1", "--format=%s"))
     shutil.rmtree(d)
 
 
