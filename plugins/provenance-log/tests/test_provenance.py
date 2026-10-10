@@ -21,6 +21,7 @@ CANDIDATES = [
     os.path.join(HERE, "scripts", "provenance.py"),
     os.path.join(HERE, os.pardir, "scripts", "provenance.py"),
     os.path.join(HERE, os.pardir, "provenance.py"),
+    os.path.join(HERE, os.pardir, "skills", "provenance-log", "scripts", "provenance.py"),
 ]
 CLI = next((os.path.abspath(c) for c in CANDIDATES if os.path.exists(c)), None)
 if CLI is None:

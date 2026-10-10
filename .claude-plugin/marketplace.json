@@ -10,7 +10,8 @@
       "name": "provenance-log",
       "source": "./plugins/provenance-log",
       "description": "Reproducible provenance capture for computational analyses: steps, versions, checksums, plus a reproducibility checklist.",
-      "version": "0.3.0"
+      "version": "0.3.1",
+      "license": "MIT"
     }
   ]
 }

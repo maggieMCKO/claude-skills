@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "provenance-log",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Records reproducible provenance for computational analyses: every step, software version, script and input/output checksum, captured while the work happens. Includes an automatic Bash-command hook and a three-axis reproducibility checklist.",
   "author": {
     "name": "Meng-Ching Ko",
@@ -16,8 +16,5 @@
     "research-software",
     "FAIR",
     "bioinformatics"
-  ],
-  "skills": [
-    "./"
   ]
 }

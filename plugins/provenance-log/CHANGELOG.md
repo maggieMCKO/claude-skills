@@ -3,6 +3,18 @@
 Follows [Semantic Versioning](https://semver.org). Versions below 1.0.0 signal
 that the command-line interface may still change.
 
+## 0.3.1 - 2026-10-10
+
+### Changed
+- Standard plugin layout: the skill now lives in `skills/provenance-log/` (SKILL.md, `scripts/`,
+  `kernel.py`, `reference/`, `install_hook.py`). Claude Science's "Import from GitHub" rejected
+  the old layout (SKILL.md at the plugin root, `"skills": ["./"]`) with "no skills/ dirs with
+  SKILL.md". The plugin hook now points at `skills/provenance-log/scripts/provenance.py`.
+- Manual (copied) installs copy `plugins/provenance-log/skills/provenance-log` instead of the
+  plugin folder; paths inside the skill are unchanged, so existing settings-file hooks still work.
+- `license: MIT` added to the marketplace entry (importers showed "license: unknown").
+- No change to `provenance.py` behaviour.
+
 ## 0.3.0 - 2026-10-10
 
 Fixes found while using the tool on a multi-day RNA-seq analysis. Each has a regression test

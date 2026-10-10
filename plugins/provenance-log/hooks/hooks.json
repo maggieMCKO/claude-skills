@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/provenance.py\" hook"
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/provenance-log/scripts/provenance.py\" hook"
           }
         ]
       }

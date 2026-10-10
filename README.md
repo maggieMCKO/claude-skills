@@ -26,7 +26,7 @@ picks up new plugins and versions.
 
 | Plugin | What it does | Version |
 |---|---|---|
-| [provenance-log](plugins/provenance-log/) | Records every step, software version, script and input/output checksum of a computational analysis while it runs, with an automatic Bash-command hook and a three-axis reproducibility checklist. | 0.3.0 |
+| [provenance-log](plugins/provenance-log/) | Records every step, software version, script and input/output checksum of a computational analysis while it runs, with an automatic Bash-command hook and a three-axis reproducibility checklist. | 0.3.1 |
 
 ## claude.ai and Claude Science (skill upload)
 
@@ -35,6 +35,10 @@ claude.ai's skill upload accepts Agent Skills, not plugins, and rejects a folder
 (no plugin manifest, hooks or tests): download it from the
 [Releases](https://github.com/maggieMCKO/claude-skills/releases) page and upload it as a skill.
 The automatic-capture hook is a Claude Code plugin feature and is not part of the skill zip.
+
+**Claude Science** can instead *Import from GitHub* (`maggieMCKO/claude-skills`): it picks up
+every `plugins/<plugin>/skills/<skill>/SKILL.md`. Imports are pinned to a commit and do not
+update automatically, so re-import after a release.
 
 To build one yourself: `tools/build-skill-zip.sh <plugin>` (writes `dist/`).
 
@@ -49,12 +53,12 @@ To build one yourself: `tools/build-skill-zip.sh <plugin>` (writes `dist/`).
 
 ## Without the plugin system
 
-Every plugin folder is also a plain Agent Skill folder. Copy one into your agent's skills
-directory:
+Every plugin keeps its skill(s) in `plugins/<plugin>/skills/<skill>/`, a plain Agent Skill folder.
+Copy one into your agent's skills directory:
 
 ```bash
 git clone https://github.com/maggieMCKO/claude-skills.git
-cp -R claude-skills/plugins/provenance-log ~/.claude/skills/    # or ~/.codex/skills/
+cp -R claude-skills/plugins/provenance-log/skills/provenance-log ~/.claude/skills/    # or ~/.codex/skills/
 ```
 
 ## Citing

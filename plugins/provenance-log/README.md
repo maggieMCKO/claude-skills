@@ -48,7 +48,7 @@ to edit. Restart Claude Code (or run `/reload-plugins`) afterwards. Update with
 
 ```bash
 git clone https://github.com/maggieMCKO/claude-skills.git
-cp -R claude-skills/plugins/provenance-log ~/.claude/skills/     # or ~/.codex/skills/ for Codex CLI
+cp -R claude-skills/plugins/provenance-log/skills/provenance-log ~/.claude/skills/   # or ~/.codex/skills/
 ```
 
 | Agent | Personal (all projects) | Project-local |
@@ -56,9 +56,18 @@ cp -R claude-skills/plugins/provenance-log ~/.claude/skills/     # or ~/.codex/s
 | Claude Code | `~/.claude/skills/` | `<repo>/.claude/skills/` |
 | Codex CLI | `~/.codex/skills/` | — |
 
-`SKILL.md` follows the open Agent Skills format, so the same folder works in any agent that
-reads it. Recent Claude Code versions also load a folder under `~/.claude/skills/` that carries
-a `.claude-plugin/` manifest as a plugin, hook included.
+`skills/provenance-log/` is a plain Agent Skill (open Agent Skills format), so the same folder
+works in any agent that reads it. The plugin wraps it with `.claude-plugin/` and `hooks/`.
+
+### claude.ai and Claude Science
+
+- **claude.ai** (skill upload): upload `provenance-log-<version>-skill.zip` from the repository's
+  Releases page (or build it with `tools/build-skill-zip.sh provenance-log`).
+- **Claude Science** (Import from GitHub): import `maggieMCKO/claude-skills`; it finds
+  `plugins/provenance-log/skills/provenance-log/`. Imports do not update automatically: re-import
+  after a new version. Claude Science runs `kernel.py`, so the `prov_*` helpers are available.
+
+The automatic-capture hook is a Claude Code plugin feature; elsewhere, record steps explicitly.
 
 **Personal or project?** Personal (the plugin, or `~/.claude/skills/`) is the right default: it
 is a general tool you want in every analysis project, and it costs nothing when idle because

@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# Build an upload-ready Agent Skill zip for one plugin (or all of them).
+# Build upload-ready Agent Skill zips for claude.ai from plugins/<plugin>/skills/<skill>/.
 #
-# claude.ai's skill upload rejects plugin metadata ("A skill cannot contain a plugin
-# manifest"), so the zip drops what only the Claude Code plugin system uses:
-#   .claude-plugin/   plugin manifest
-#   hooks/            plugin hooks (no effect outside Claude Code plugins)
-#   tests/            development only
-# Built from committed files (git archive), so caches and local junk never ship.
+# Each skill folder is self-contained and carries no plugin metadata (claude.ai's skill
+# upload rejects .claude-plugin/), so the zip is that folder as committed (git archive:
+# caches and local junk never ship). Prints one zip path per skill.
 #
-#   tools/build-skill-zip.sh provenance-log            # -> dist/provenance-log-<version>-skill.zip
-#   tools/build-skill-zip.sh                           # every plugin under plugins/
-#   REF=v1 OUT=/tmp tools/build-skill-zip.sh provenance-log
+#   tools/build-skill-zip.sh provenance-log     # -> dist/provenance-log-<version>-skill.zip
+#   tools/build-skill-zip.sh                    # every plugin under plugins/
+#   REF=main OUT=/tmp tools/build-skill-zip.sh provenance-log
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -23,17 +20,18 @@ if [ ${#plugins[@]} -eq 0 ]; then
   mapfile -t plugins < <(git ls-tree --name-only "$REF" plugins/ | xargs -n1 basename)
 fi
 
-for name in "${plugins[@]}"; do
-  dir=plugins/$name
-  git cat-file -e "$REF:$dir/SKILL.md" 2>/dev/null || { echo "skip $name: no SKILL.md at $REF" >&2; continue; }
+for plugin in "${plugins[@]}"; do
+  dir=plugins/$plugin
   version=$(git show "$REF:$dir/.claude-plugin/plugin.json" 2>/dev/null \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || echo dev)
-  zip="$OUT/$name-$version-skill.zip"
-  tmp=$(mktemp -d)
-  git archive --format=tar --prefix="$name/" "$REF:$dir" | tar -x -C "$tmp"
-  rm -rf "$tmp/$name/.claude-plugin" "$tmp/$name/hooks" "$tmp/$name/tests"
-  rm -f "$zip"
-  (cd "$tmp" && zip -qr - "$name") > "$zip"
-  rm -rf "$tmp"
-  echo "$zip"
+  skills=$(git ls-tree --name-only "$REF" "$dir/skills/" 2>/dev/null | xargs -rn1 basename)
+  [ -n "$skills" ] || { echo "skip $plugin: no skills/ at $REF" >&2; continue; }
+  for skill in $skills; do
+    git cat-file -e "$REF:$dir/skills/$skill/SKILL.md" 2>/dev/null \
+      || { echo "skip $plugin/$skill: no SKILL.md" >&2; continue; }
+    zip="$OUT/$skill-$version-skill.zip"
+    rm -f "$zip"
+    git archive --format=zip --prefix="$skill/" -o "$zip" "$REF:$dir/skills/$skill"
+    echo "$zip"
+  done
 done
