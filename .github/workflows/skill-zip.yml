@@ -1,0 +1,50 @@
+# Build upload-ready Agent Skill zips (no plugin manifest/hooks/tests) for claude.ai.
+#
+# - Publishing a GitHub release named/tagged "<plugin>-v<version>" (e.g. provenance-log-v0.3.0)
+#   attaches <plugin>-<version>-skill.zip to that release. The tag must match the version in
+#   plugins/<plugin>/.claude-plugin/plugin.json, or the job fails.
+# - "Run workflow" (manual) builds zips for every plugin and keeps them as a downloadable
+#   workflow artifact.
+name: skill zip
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # upload release assets
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+
+      - name: Build (release)
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          plugin=${TAG%-v*}
+          want=${TAG##*-v}
+          [ "$plugin" != "$TAG" ] || { echo "tag '$TAG' is not <plugin>-v<version>"; exit 1; }
+          have=$(python3 -c "import json;print(json.load(open('plugins/$plugin/.claude-plugin/plugin.json'))['version'])")
+          [ "$have" = "$want" ] || { echo "tag says $want but plugin.json says $have"; exit 1; }
+          zip=$(tools/build-skill-zip.sh "$plugin")
+          unzip -l "$zip"
+          gh release upload "$TAG" "$zip" --clobber
+
+      - name: Build (manual)
+        if: github.event_name != 'release'
+        run: tools/build-skill-zip.sh
+
+      - name: Keep as workflow artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-zips
+          path: dist/*.zip

@@ -26,7 +26,26 @@ picks up new plugins and versions.
 
 | Plugin | What it does | Version |
 |---|---|---|
-| [provenance-log](plugins/provenance-log/) | Records every step, software version, script and input/output checksum of a computational analysis while it runs, with an automatic Bash-command hook and a three-axis reproducibility checklist. | 0.2.1 |
+| [provenance-log](plugins/provenance-log/) | Records every step, software version, script and input/output checksum of a computational analysis while it runs, with an automatic Bash-command hook and a three-axis reproducibility checklist. | 0.3.0 |
+
+## claude.ai and Claude Science (skill upload)
+
+claude.ai's skill upload accepts Agent Skills, not plugins, and rejects a folder that contains
+`.claude-plugin/`. Each release therefore carries a ready-made **`<plugin>-<version>-skill.zip`**
+(no plugin manifest, hooks or tests): download it from the
+[Releases](https://github.com/maggieMCKO/claude-skills/releases) page and upload it as a skill.
+The automatic-capture hook is a Claude Code plugin feature and is not part of the skill zip.
+
+To build one yourself: `tools/build-skill-zip.sh <plugin>` (writes `dist/`).
+
+### Releasing a new version (maintainer)
+
+1. Bump `version` in `plugins/<plugin>/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+   `CITATION.cff` and the table above; add a `CHANGELOG.md` entry; merge to `main`.
+2. Publish a GitHub release with tag `<plugin>-v<version>` (e.g. `provenance-log-v0.3.0`).
+   The `skill zip` workflow checks the tag against `plugin.json` and attaches the skill zip.
+3. Claude Code users: `claude plugin marketplace update claude-skills && claude plugin update <plugin>@claude-skills`.
+   claude.ai users: replace the uploaded skill with the new zip.
 
 ## Without the plugin system
 
